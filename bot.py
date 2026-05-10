@@ -15,7 +15,7 @@ CHAT_ID = int(os.environ["CHAT_ID"])
 YT_API_KEY = os.environ["YT_API_KEY"]
 
 PLAYLISTS = {
-    "TEST PLAYLIST": "PLNo7E_5nW_2NL-X5x83r65dy97sujkZpe",
+    "TEST PLAYLIST": "PLeXHD_mkfpqU6YVJri9QFy074Q9RMKF7g",
 }
 
 # Stores last known item count per playlist
