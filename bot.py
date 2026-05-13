@@ -20,6 +20,7 @@ PLAYLISTS = {
     "TREASURE":    "PLuWI86ItS2gGxsh4hl2ZHeoyAWIm471HK",
     "CHOOM":       "PLD-A2t1CuHHCa_GyD-2pXVuZLqQIvKLUs",
     "YG STUDIO":   "PLuWI86ItS2gGnlX-NDajZGDugWie_ZZlp",
+    "NEXT MONSTER":"PLuWI86ItS2gFnopUHOZyCtFYxpwsjNRNm",
 }
 
 # Stores last known item count per playlist
