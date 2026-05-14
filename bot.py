@@ -15,23 +15,26 @@ CHAT_ID = int(os.environ["CHAT_ID"])
 YT_API_KEY = os.environ["YT_API_KEY"]
 
 PLAYLISTS = {
-    "BABYMONSTER": "PLuWI86ItS2gEykz3Xy1MyaQxFOcnYbUr9",
-    "BLACKPINK":   "PLuWI86ItS2gH_xUTgC8xgiq03StltmpMk",
-    "TREASURE":    "PLuWI86ItS2gGxsh4hl2ZHeoyAWIm471HK",
-    "CHOOM":       "PLD-A2t1CuHHCa_GyD-2pXVuZLqQIvKLUs",
-    "YG STUDIO":   "PLuWI86ItS2gGnlX-NDajZGDugWie_ZZlp",
-    "NEXT MONSTER":"PLuWI86ItS2gFnopUHOZyCtFYxpwsjNRNm",
+    "BABYMONSTER":  "PLuWI86ItS2gEykz3Xy1MyaQxFOcnYbUr9",
+    "BLACKPINK":    "PLuWI86ItS2gH_xUTgC8xgiq03StltmpMk",
+    "TREASURE":     "PLuWI86ItS2gGxsh4hl2ZHeoyAWIm471HK",
+    "CHOOM":        "PLD-A2t1CuHHCa_GyD-2pXVuZLqQIvKLUs",
+    "YG STUDIO":    "PLuWI86ItS2gGnlX-NDajZGDugWie_ZZlp",
+    "NEXT MONSTER": "PLuWI86ItS2gFnopUHOZyCtFYxpwsjNRNm",
 }
 
-# Stores last known item count per playlist
 last_count: dict[str, int | None] = {name: None for name in PLAYLISTS}
-
-# Stores when we first detected an increase in count
 update_detected_at: dict[str, datetime | None] = {name: None for name in PLAYLISTS}
 
 
+def reset_memory():
+    global last_count, update_detected_at
+    last_count = {name: None for name in PLAYLISTS}
+    update_detected_at = {name: None for name in PLAYLISTS}
+    logger.info("Memory cleared.")
+
+
 async def fetch_playlist_info(playlist_id: str) -> dict | None:
-    """Returns playlist snippet + contentDetails (title, itemCount)."""
     url = "https://www.googleapis.com/youtube/v3/playlists"
     params = {
         "part": "snippet,contentDetails",
@@ -42,7 +45,6 @@ async def fetch_playlist_info(playlist_id: str) -> dict | None:
         resp = await client.get(url, params=params)
         resp.raise_for_status()
         data = resp.json()
-
     items = data.get("items", [])
     if not items:
         return None
@@ -85,13 +87,11 @@ async def check_playlists(app) -> None:
         prev_count = last_count[name]
 
         if prev_count is None:
-            # First run — just record baseline, no alert
             last_count[name] = item_count
             logger.info(f"{name}: baseline count = {item_count}")
             continue
 
         if item_count > prev_count:
-            # Count went up — new video added (could be private/unlisted!)
             added = item_count - prev_count
             last_count[name] = item_count
             update_detected_at[name] = datetime.now(timezone.utc)
@@ -104,18 +104,22 @@ async def check_playlists(app) -> None:
                 f"Total videos: {item_count}\n"
                 f"[Open Playlist]({playlist_url})"
             )
-            await app.bot.send_message(
-                chat_id=CHAT_ID,
-                text=msg,
-                parse_mode="Markdown",
-            )
+            await app.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
             logger.info(f"Alert sent for {name}: count {prev_count} → {item_count}")
 
         elif item_count < prev_count:
-            # Count went down — video removed (just log, no alert)
             removed = prev_count - item_count
             last_count[name] = item_count
             logger.info(f"{name}: {removed} video(s) removed, count now {item_count}")
+
+            playlist_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+            msg = (
+                f"🗑️ *{name}* playlist: {removed} video{'s' if removed != 1 else ''} removed!\n"
+                f"Total videos: {item_count}\n"
+                f"[Open Playlist]({playlist_url})"
+            )
+            await app.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
+            logger.info(f"Deletion alert sent for {name}")
 
 
 async def get_status_message() -> str:
@@ -137,10 +141,7 @@ async def get_status_message() -> str:
         if detected:
             time_str = human_time_ago(detected)
             emoji = "🟢" if time_str == "Just Now" else "🟡"
-            lines.append(
-                f"• *{name}*: {emoji} Updated {time_str} "
-                f"({item_count} videos)"
-            )
+            lines.append(f"• *{name}*: {emoji} Updated {time_str} ({item_count} videos)")
         else:
             lines.append(f"• *{name}*: ⚪ No Update ({item_count} videos)")
 
@@ -153,15 +154,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🔄 Fetching live status...")
         msg = await get_status_message()
         await update.message.reply_text(msg, parse_mode="Markdown")
+    elif text == "reset":
+        reset_memory()
+        await update.message.reply_text(
+            "🔄 Memory cleared! Baselines will re-record on next check (within 5 mins)."
+        )
 
 
 async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 *YG Playlist Monitor* is active!\n\n"
         "I watch for changes in playlist video counts — "
-        "this catches *private & unlisted videos* too, "
-        "so you'll know when a new release is incoming 👀\n\n"
-        "Send *update* anytime to check current status.",
+        "this catches *private & unlisted videos* too 👀\n\n"
+        "Commands:\n"
+        "• *update* — check current status\n"
+        "• *reset* — clear memory & restart tracking",
         parse_mode="Markdown",
     )
 
@@ -173,6 +180,11 @@ async def periodic_check(app):
 
 
 async def post_init(app):
+    await app.bot.send_message(
+        chat_id=CHAT_ID,
+        text="🟢 *Bot started!* Monitoring 6 playlists.\nSend *update* to check status.",
+        parse_mode="Markdown",
+    )
     asyncio.create_task(periodic_check(app))
 
 
